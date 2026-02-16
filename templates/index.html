@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Law School Admission Odds</title>
+  <link rel="stylesheet" href="/static/style.css?v=2">
+</head>
+<body>
+
+<div class="container">
+  <h1>Law School Admission Odds</h1>
+  <p class="subtitle">Competitive range analysis using ABA percentiles &amp; LSD self-reported outcomes</p>
+
+  <!-- ── Applicant Info ─────────────────────────────── -->
+  <div class="card">
+    <h2>Applicant Info</h2>
+    <div class="form-row">
+      <div class="form-group">
+        <label for="lsat">LSAT Score</label>
+        <input type="number" id="lsat" min="120" max="180" step="1" placeholder="e.g. 165">
+      </div>
+      <div class="form-group">
+        <label for="gpa">GPA</label>
+        <input type="number" id="gpa" min="0" max="4.33" step="0.01" placeholder="e.g. 3.75">
+      </div>
+      <div class="form-group checkbox-group">
+        <label><input type="checkbox" id="is_kjd"> KJD <span class="hint">(no work experience)</span></label>
+        <label><input type="checkbox" id="is_urm"> URM</label>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── School Selection ───────────────────────────── -->
+  <div class="card">
+    <h2>Select Schools</h2>
+
+    <!-- Search bar -->
+    <div class="search-wrap">
+      <input type="text" id="school-search" placeholder="Search schools..." autocomplete="off">
+      <span class="search-count" id="search-count"></span>
+    </div>
+
+    <!-- Tier quick-select buttons -->
+    <div class="tier-buttons">
+      <button class="tier-btn" data-tier="t14">T-14</button>
+      <button class="tier-btn" data-tier="t20">T-20</button>
+      <button class="tier-btn" data-tier="t30">T-30</button>
+      <button class="tier-btn" data-tier="t50">T-50</button>
+      <button class="tier-btn" data-tier="all">All Schools</button>
+      <button class="tier-btn clear-btn" id="clear-all">Clear All</button>
+    </div>
+
+    <!-- Selected count -->
+    <div class="selected-info">
+      <span id="selected-count">0</span> school(s) selected
+      <button id="toggle-list" class="toggle-btn">Show School List</button>
+    </div>
+
+    <!-- Collapsible school checkbox list -->
+    <div id="school-list-container" class="school-list-container hidden">
+      <div id="school-list" class="school-list"></div>
+    </div>
+  </div>
+
+  <!-- ── Run button ─────────────────────────────────── -->
+  <button id="analyze-btn" class="analyze-btn">Analyze Odds</button>
+
+  <!-- ── Results ────────────────────────────────────── -->
+  <div id="results-section" class="results-section hidden">
+    <h2>Results</h2>
+    <div id="applicant-summary" class="applicant-summary"></div>
+    <div id="results-grid" class="results-grid"></div>
+    <div class="legend" id="legend"></div>
+  </div>
+
+  <!-- ── Error display ──────────────────────────────── -->
+  <div id="error-msg" class="error-msg hidden"></div>
+</div>
+
+<script src="/static/app.js?v=2"></script>
+</body>
+</html>
