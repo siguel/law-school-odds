@@ -74,6 +74,7 @@ class SchoolAnalysis:
     gpa_50: Optional[float]
     at_lsat_median: bool
     below_gpa_floor: bool
+    below_gpa_25: bool          # True when applicant GPA < 25th (but above floor)
     # Cascade: total -> kjd -> urm -> on_time
     total: GroupStats       # in-box, pending removed
     kjd: GroupStats         # filtered to KJD or non-KJD
@@ -81,6 +82,12 @@ class SchoolAnalysis:
     on_time: GroupStats     # then filtered to on-time apps
     kjd_label: str
     urm_label: str
+    # Comparison cascade using [25th, median-0.01] GPA range (when below 25th)
+    comp_total: Optional[GroupStats] = None
+    comp_kjd: Optional[GroupStats] = None
+    comp_urm: Optional[GroupStats] = None
+    comp_on_time: Optional[GroupStats] = None
+    comp_gpa_range: Optional[Range] = None
     warning: Optional[str] = None
 
 
@@ -238,6 +245,14 @@ def analyze_school(
 
     empty = GroupStats(0, 0)
 
+    # Detect below-25th-but-above-floor (eligible for comparison range)
+    below_gpa_25 = (
+        not below_gpa_floor
+        and pct.gpa_25 is not None
+        and pct.gpa_50 is not None
+        and applicant_gpa < pct.gpa_25
+    )
+
     if lsat_range is None or gpa_range is None:
         return SchoolAnalysis(
             school_name=school_name,
@@ -246,42 +261,72 @@ def analyze_school(
             gpa_25=pct.gpa_25, gpa_50=pct.gpa_50,
             at_lsat_median=at_median,
             below_gpa_floor=below_gpa_floor,
+            below_gpa_25=below_gpa_25,
             total=empty, kjd=empty, urm=empty, on_time=empty,
             kjd_label=kjd_label, urm_label=urm_label,
             warning="Missing percentile data",
         )
 
-    # Filter to competitive range box
+    # ── Primary cascade using actual GPA range ──
     in_box = lsd[
         (lsd["lsat"] >= lsat_range.lower) & (lsd["lsat"] <= lsat_range.upper) &
         (lsd["gpa"] >= gpa_range.lower) & (lsd["gpa"] <= gpa_range.upper)
     ]
 
-    # Level 1: Total — remove pending / no-decision
     decided = in_box[in_box["result_group"] != "no_decision"]
     total = _count(decided)
 
-    # Level 2: KJD slice
     if is_kjd:
         kjd_df = decided[decided["is_kjd"]]
     else:
         kjd_df = decided[~decided["is_kjd"]]
     kjd_stats = _count(kjd_df)
 
-    # Level 3: URM slice (within the KJD slice)
     if is_urm:
         urm_df = kjd_df[kjd_df["is_urm"]]
     else:
         urm_df = kjd_df[~kjd_df["is_urm"]]
     urm_stats = _count(urm_df)
 
-    # Level 4: On-time (within the URM slice)
     on_time_df = _filter_on_time(urm_df)
     on_time_stats = _count(on_time_df)
 
     warning = None
     if total.total < 5:
         warning = f"Low sample size (n={total.total})"
+
+    # ── Comparison cascade: [25th, median-0.01] GPA range ──
+    # Only computed when applicant GPA is below 25th but above floor.
+    comp_total = comp_kjd = comp_urm = comp_on_time = None
+    comp_gpa_range = None
+    if below_gpa_25 and lsat_range is not None:
+        p25, median = pct.gpa_25, pct.gpa_50
+        comp_upper = median - GPA_MEDIAN_EPS
+        if comp_upper < p25:
+            comp_upper = p25
+        comp_gpa_range = Range(p25, comp_upper)
+
+        comp_box = lsd[
+            (lsd["lsat"] >= lsat_range.lower) & (lsd["lsat"] <= lsat_range.upper) &
+            (lsd["gpa"] >= comp_gpa_range.lower) & (lsd["gpa"] <= comp_gpa_range.upper)
+        ]
+        comp_decided = comp_box[comp_box["result_group"] != "no_decision"]
+        comp_total = _count(comp_decided)
+
+        if is_kjd:
+            comp_kjd_df = comp_decided[comp_decided["is_kjd"]]
+        else:
+            comp_kjd_df = comp_decided[~comp_decided["is_kjd"]]
+        comp_kjd = _count(comp_kjd_df)
+
+        if is_urm:
+            comp_urm_df = comp_kjd_df[comp_kjd_df["is_urm"]]
+        else:
+            comp_urm_df = comp_kjd_df[~comp_kjd_df["is_urm"]]
+        comp_urm = _count(comp_urm_df)
+
+        comp_on_time_df = _filter_on_time(comp_urm_df)
+        comp_on_time = _count(comp_on_time_df)
 
     return SchoolAnalysis(
         school_name=school_name,
@@ -290,6 +335,11 @@ def analyze_school(
         gpa_25=pct.gpa_25, gpa_50=pct.gpa_50,
         at_lsat_median=at_median,
         below_gpa_floor=below_gpa_floor,
+        below_gpa_25=below_gpa_25,
         total=total, kjd=kjd_stats, urm=urm_stats, on_time=on_time_stats,
-        kjd_label=kjd_label, urm_label=urm_label, warning=warning,
+        kjd_label=kjd_label, urm_label=urm_label,
+        comp_total=comp_total, comp_kjd=comp_kjd,
+        comp_urm=comp_urm, comp_on_time=comp_on_time,
+        comp_gpa_range=comp_gpa_range,
+        warning=warning,
     )

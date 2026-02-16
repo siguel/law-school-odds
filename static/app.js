@@ -178,6 +178,7 @@ function renderResults(data) {
 
   let hasMedianFlag = false;
   let hasGpaFloorFlag = false;
+  let hasCompFlag = false;
 
   results.forEach(r => {
     if (r.error) {
@@ -195,6 +196,8 @@ function renderResults(data) {
 
     if (r.at_lsat_median) hasMedianFlag = true;
     if (r.below_gpa_floor) hasGpaFloorFlag = true;
+    const hasComp = !!r.comparison;
+    if (hasComp) hasCompFlag = true;
 
     const card = document.createElement("div");
     card.className = "school-card";
@@ -203,9 +206,34 @@ function renderResults(data) {
     const rate = be.rate;
     const verdictCls = verdictClass(r.verdict);
 
-    // Build the card HTML
     const mflag = r.at_lsat_median ? '<span class="at-median-flag"> *</span>' : "";
     const gflag = r.below_gpa_floor ? '<span class="below-floor-flag"> **</span>' : "";
+
+    // Build comparison chart column if below 25th GPA
+    let compChartHtml = "";
+    if (hasComp) {
+      const c = r.comparison;
+      const compBe = pickBestEstimate(c.total, c.kjd, c.urm, c.on_time, r.kjd_label, r.urm_label);
+      compChartHtml = `
+        <div class="card-chart-col comp-chart-col">
+          <div class="comp-label">If 25th&ndash;med GPA</div>
+          <canvas class="pie-canvas pie-comp" width="110" height="110"></canvas>
+          <div class="card-verdict ${verdictClassFromRate(compBe.rate)}">${fmtRate(compBe.rate)}</div>
+          <div class="card-basis">${esc(compBe.label)} (n=${compBe.n})</div>
+        </div>`;
+    }
+
+    // Build comparison table rows
+    let compColHeaders = "";
+    let compRowTotal = "", compRowKjd = "", compRowUrm = "", compRowOt = "";
+    if (hasComp) {
+      const c = r.comparison;
+      compColHeaders = `<th class="comp-th">N</th><th class="comp-th">Adm</th><th class="comp-th">Rate</th>`;
+      compRowTotal = `<td class="comp-td">${c.total.total}</td><td class="comp-td">${c.total.accepted}</td><td class="comp-td">${fmtRate(c.total.rate)}</td>`;
+      compRowKjd   = `<td class="comp-td">${c.kjd.total}</td><td class="comp-td">${c.kjd.accepted}</td><td class="comp-td">${fmtRate(c.kjd.rate)}</td>`;
+      compRowUrm   = `<td class="comp-td">${c.urm.total}</td><td class="comp-td">${c.urm.accepted}</td><td class="comp-td">${fmtRate(c.urm.rate)}</td>`;
+      compRowOt    = `<td class="comp-td">${c.on_time.total}</td><td class="comp-td">${c.on_time.accepted}</td><td class="comp-td">${fmtRate(c.on_time.rate)}</td>`;
+    }
 
     card.innerHTML = `
       <div class="card-header">
@@ -214,32 +242,35 @@ function renderResults(data) {
       </div>
       <div class="card-body">
         <div class="card-chart-col">
-          <canvas class="pie-canvas" width="140" height="140"></canvas>
+          ${hasComp ? '<div class="comp-label">Your range</div>' : ''}
+          <canvas class="pie-canvas pie-primary" width="${hasComp ? 110 : 140}" height="${hasComp ? 110 : 140}"></canvas>
           <div class="card-verdict ${verdictCls}">${r.verdict}</div>
-          <div class="card-basis">Based on: ${esc(be.label)} (n=${be.n})</div>
+          <div class="card-basis">${esc(be.label)} (n=${be.n})</div>
         </div>
+        ${compChartHtml}
         <div class="card-stats-col">
           <div class="card-ranges">
             <span class="range-label">LSAT:</span> ${fmtRange(r.lsat_range, true)}${mflag}
             <span class="range-med">(med ${fmtPct(r.lsat_50, true)})</span><br>
             <span class="range-label">GPA:</span> ${fmtRange(r.gpa_range, false)}${gflag}
             <span class="range-med">(med ${fmtPct(r.gpa_50, false)})</span>
+            ${hasComp ? '<br><span class="range-label comp-color">Comp GPA:</span> ' + fmtRange(r.comparison.gpa_range, false) + ' <span class="range-med">(25th&ndash;med)</span>' : ''}
           </div>
           <table class="card-table">
             <tr>
-              <th>Level</th><th>N</th><th>Adm</th><th>Rate</th>
+              <th>Level</th><th>N</th><th>Adm</th><th>Rate</th>${compColHeaders}
             </tr>
             <tr class="${be.level === 'total' ? 'best-row' : ''}">
-              <td>Total</td><td>${r.total.total}</td><td>${r.total.accepted}</td><td>${fmtRate(r.total.rate)}</td>
+              <td>Total</td><td>${r.total.total}</td><td>${r.total.accepted}</td><td>${fmtRate(r.total.rate)}</td>${compRowTotal}
             </tr>
             <tr class="${be.level === 'kjd' ? 'best-row' : ''}">
-              <td>${esc(r.kjd_label)}</td><td>${r.kjd.total}</td><td>${r.kjd.accepted}</td><td>${fmtRate(r.kjd.rate)}</td>
+              <td>${esc(r.kjd_label)}</td><td>${r.kjd.total}</td><td>${r.kjd.accepted}</td><td>${fmtRate(r.kjd.rate)}</td>${compRowKjd}
             </tr>
             <tr class="${be.level === 'urm' ? 'best-row' : ''}">
-              <td>${esc(r.urm_label)}</td><td>${r.urm.total}</td><td>${r.urm.accepted}</td><td>${fmtRate(r.urm.rate)}</td>
+              <td>${esc(r.urm_label)}</td><td>${r.urm.total}</td><td>${r.urm.accepted}</td><td>${fmtRate(r.urm.rate)}</td>${compRowUrm}
             </tr>
             <tr class="${be.level === 'on_time' ? 'best-row' : ''}">
-              <td>On-time</td><td>${r.on_time.total}</td><td>${r.on_time.accepted}</td><td>${fmtRate(r.on_time.rate)}</td>
+              <td>On-time</td><td>${r.on_time.total}</td><td>${r.on_time.accepted}</td><td>${fmtRate(r.on_time.rate)}</td>${compRowOt}
             </tr>
           </table>
         </div>
@@ -247,9 +278,18 @@ function renderResults(data) {
 
     grid.appendChild(card);
 
-    // Draw pie chart
-    const canvas = card.querySelector(".pie-canvas");
-    drawPie(canvas, rate, r.verdict);
+    // Draw primary pie chart
+    const primaryCanvas = card.querySelector(".pie-primary");
+    drawPie(primaryCanvas, rate, r.verdict);
+
+    // Draw comparison pie chart if present
+    if (hasComp) {
+      const compCanvas = card.querySelector(".pie-comp");
+      const c = r.comparison;
+      const compBe = pickBestEstimate(c.total, c.kjd, c.urm, c.on_time, r.kjd_label, r.urm_label);
+      const compVerdict = verdictFromRate(compBe.rate, compBe.n);
+      drawPie(compCanvas, compBe.rate, compVerdict, "#8b5cf6");
+    }
   });
 
   // Legend
@@ -257,6 +297,7 @@ function renderResults(data) {
   let legendText = "";
   if (hasMedianFlag) legendText += "* = applicant is at LSAT median (treated as below-median for range)<br>";
   if (hasGpaFloorFlag) legendText += "** = applicant GPA is below the 2nd-lowest accepted GPA (range capped at floor)<br>";
+  if (hasCompFlag) legendText += '<span class="comp-color">Purple chart</span> = comparison using 25th&ndash;median GPA range (what if your GPA were in the normal below-median band)<br>';
   legendText += "Pie chart shows best estimate: the most specific cascade level with N &ge; 5.<br>";
   legendText += `Cascade: Total (decided) &rarr; ${kjdLabel} &rarr; ${urmLabel} &rarr; On-time (&le; Jan 1)<br>`;
   legendText += "Percentiles: ABA First Year Class 2025. Outcomes: LSD self-reports.";
@@ -265,9 +306,43 @@ function renderResults(data) {
   section.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
+// ── Best-estimate picker (reused for comparison) ────────────────────
+
+function pickBestEstimate(total, kjd, urm, on_time, kjdLabel, urmLabel) {
+  const MIN_N = 5;
+  const levels = [
+    { key: "on_time", label: "On-time", stats: on_time },
+    { key: "urm",     label: urmLabel,   stats: urm },
+    { key: "kjd",     label: kjdLabel,   stats: kjd },
+    { key: "total",   label: "Total",    stats: total },
+  ];
+  for (const lv of levels) {
+    if (lv.stats && lv.stats.total >= MIN_N && lv.stats.rate != null) {
+      return { level: lv.key, label: lv.label, rate: lv.stats.rate, n: lv.stats.total };
+    }
+  }
+  return { level: "total", label: "Total", rate: total ? total.rate : null, n: total ? total.total : 0 };
+}
+
+function verdictFromRate(rate, n) {
+  if (n < 5 || rate == null) return "Low Data";
+  if (rate >= 60) return "Likely";
+  if (rate >= 40) return "Good Chance";
+  if (rate >= 20) return "Possible";
+  return "Unlikely";
+}
+
+function verdictClassFromRate(rate) {
+  if (rate == null) return "verdict-low-data";
+  if (rate >= 60) return "verdict-likely";
+  if (rate >= 40) return "verdict-good-chance";
+  if (rate >= 20) return "verdict-possible";
+  return "verdict-unlikely";
+}
+
 // ── Pie chart drawing ───────────────────────────────────────────────
 
-function drawPie(canvas, rate, verdict) {
+function drawPie(canvas, rate, verdict, colorOverride) {
   const ctx = canvas.getContext("2d");
   const w = canvas.width;
   const h = canvas.height;
@@ -295,8 +370,8 @@ function drawPie(canvas, rate, verdict) {
   const acceptAngle = pct * Math.PI * 2;
   const startAngle = -Math.PI / 2;  // 12 o'clock
 
-  // Accepted slice (green-ish based on verdict)
-  const acceptColor = getAcceptColor(verdict);
+  // Accepted slice color
+  const acceptColor = colorOverride || getAcceptColor(verdict);
   const rejectColor = "#e5e7eb";
 
   // Reject slice

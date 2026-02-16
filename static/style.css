@@ -381,6 +381,31 @@ h2 {
   font-weight: 700;
 }
 
+/* ── Comparison (below-25th GPA) ──────────────────────────────────── */
+.comp-chart-col {
+  border-left: 2px dashed #d8b4fe;
+  padding-left: .75rem;
+}
+.comp-label {
+  font-size: .72rem;
+  font-weight: 700;
+  color: #8b5cf6;
+  text-align: center;
+  margin-bottom: .2rem;
+}
+.comp-color {
+  color: #8b5cf6;
+  font-weight: 700;
+}
+.comp-th {
+  color: #8b5cf6 !important;
+  border-left: 2px solid #ede9fe;
+}
+.comp-td {
+  border-left: 2px solid #ede9fe;
+  color: #6d28d9;
+}
+
 /* ── Legend ────────────────────────────────────────────────────────── */
 .legend {
   margin-top: 1rem;

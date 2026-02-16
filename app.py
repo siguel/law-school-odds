@@ -187,6 +187,7 @@ def api_analyze():
             "gpa_50": analysis.gpa_50,
             "at_lsat_median": analysis.at_lsat_median,
             "below_gpa_floor": analysis.below_gpa_floor,
+            "below_gpa_25": analysis.below_gpa_25,
             "total": _group_dict(analysis.total),
             "kjd": _group_dict(analysis.kjd),
             "urm": _group_dict(analysis.urm),
@@ -199,6 +200,13 @@ def api_analyze():
                 "rate": best_rate,
                 "n": best_n,
             },
+            "comparison": {
+                "gpa_range": _range_dict(analysis.comp_gpa_range),
+                "total": _group_dict(analysis.comp_total) if analysis.comp_total else None,
+                "kjd": _group_dict(analysis.comp_kjd) if analysis.comp_kjd else None,
+                "urm": _group_dict(analysis.comp_urm) if analysis.comp_urm else None,
+                "on_time": _group_dict(analysis.comp_on_time) if analysis.comp_on_time else None,
+            } if analysis.below_gpa_25 else None,
             "verdict": verdict,
             "warning": analysis.warning,
         })
