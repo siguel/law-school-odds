@@ -242,7 +242,7 @@ h2 {
 /* ── School result cards (grid) ───────────────────────────────────── */
 .results-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(520px, 1fr));
   gap: 1rem;
 }
 
@@ -278,6 +278,15 @@ h2 {
   font-weight: 700;
   font-size: .92rem;
   color: #1a252f;
+  flex: 1;
+}
+.card-warning {
+  font-size: .75rem;
+  color: #d97706;
+  font-weight: 600;
+  background: #fef3c7;
+  padding: .15rem .5rem;
+  border-radius: 10px;
 }
 .card-error {
   padding: 1rem;
@@ -315,8 +324,8 @@ h2 {
   text-align: center;
 }
 
-/* ── Stats column ─────────────────────────────────────────────────── */
-.card-stats-col {
+/* ── Scenarios column ────────────────────────────────────────────── */
+.card-scenarios-col {
   flex: 1;
   min-width: 0;
 }
@@ -335,6 +344,114 @@ h2 {
   font-size: .78rem;
 }
 
+/* ── Scenario bars ───────────────────────────────────────────────── */
+.scenario-bars {
+  display: flex;
+  flex-direction: column;
+  gap: .4rem;
+  margin-bottom: .5rem;
+}
+.scenario-row {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  font-size: .82rem;
+}
+.scenario-label-col {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  min-width: 140px;
+  flex-shrink: 0;
+}
+.scenario-color-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.scenario-name {
+  font-weight: 600;
+  color: #444;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.scenario-bar-col {
+  flex: 1;
+  min-width: 60px;
+}
+.scenario-bar-bg {
+  height: 16px;
+  background: #f1f5f9;
+  border-radius: 8px;
+  overflow: hidden;
+  position: relative;
+}
+.scenario-bar-fill {
+  height: 100%;
+  border-radius: 8px;
+  transition: width .4s ease;
+  min-width: 2px;
+}
+.scenario-rate-col {
+  font-weight: 700;
+  min-width: 50px;
+  text-align: right;
+  font-size: .85rem;
+}
+.scenario-n-col {
+  font-size: .72rem;
+  color: #999;
+  min-width: 36px;
+  text-align: right;
+}
+
+/* ── Scenario toggle button ──────────────────────────────────────── */
+.scenario-toggle-btn {
+  background: none;
+  border: none;
+  color: #3b82f6;
+  cursor: pointer;
+  font-size: .78rem;
+  font-weight: 600;
+  text-decoration: underline;
+  margin-top: .25rem;
+  padding: 0;
+}
+
+/* ── Scenario details (collapsible) ──────────────────────────────── */
+.scenario-details {
+  margin-top: .5rem;
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+}
+.scenario-detail {
+  background: #f8f9fa;
+  border-radius: 6px;
+  padding: .5rem;
+}
+.scenario-detail-header {
+  padding: .25rem .5rem;
+  margin-bottom: .35rem;
+  font-size: .8rem;
+}
+.scenario-detail-header strong {
+  color: #1a252f;
+}
+.scenario-desc {
+  display: block;
+  font-size: .72rem;
+  color: #888;
+  margin-top: .1rem;
+}
+.scenario-table {
+  font-size: .78rem !important;
+}
+
+/* ── Card table (cascade) ────────────────────────────────────────── */
 .card-table {
   width: 100%;
   border-collapse: collapse;
@@ -381,31 +498,6 @@ h2 {
   font-weight: 700;
 }
 
-/* ── Comparison (below-25th GPA) ──────────────────────────────────── */
-.comp-chart-col {
-  border-left: 2px dashed #d8b4fe;
-  padding-left: .75rem;
-}
-.comp-label {
-  font-size: .72rem;
-  font-weight: 700;
-  color: #8b5cf6;
-  text-align: center;
-  margin-bottom: .2rem;
-}
-.comp-color {
-  color: #8b5cf6;
-  font-weight: 700;
-}
-.comp-th {
-  color: #8b5cf6 !important;
-  border-left: 2px solid #ede9fe;
-}
-.comp-td {
-  border-left: 2px solid #ede9fe;
-  color: #6d28d9;
-}
-
 /* ── Legend ────────────────────────────────────────────────────────── */
 .legend {
   margin-top: 1rem;
@@ -416,6 +508,14 @@ h2 {
   border-radius: 8px;
   padding: .75rem 1rem;
   box-shadow: 0 1px 3px rgba(0,0,0,.06);
+}
+.legend-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  vertical-align: middle;
+  margin-right: 3px;
 }
 
 .error-msg {
@@ -443,10 +543,11 @@ h2 {
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ── Responsive ───────────────────────────────────────────────────── */
-@media (max-width: 600px) {
+@media (max-width: 700px) {
   .form-row { flex-direction: column; gap: .75rem; }
   .form-group input[type="number"] { width: 100%; }
   .school-list { grid-template-columns: 1fr; }
   .results-grid { grid-template-columns: 1fr; }
   .card-body { flex-direction: column; align-items: center; }
+  .scenario-label-col { min-width: 100px; }
 }

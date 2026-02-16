@@ -3,6 +3,14 @@
 let allSchools = [];       // [{name, slug, rank}, ...]
 let selectedSchools = new Set();
 
+// ── Scenario colors ─────────────────────────────────────────────────
+const SCENARIO_COLORS = {
+  base:         { fill: "#64748b", label: "Base Model" },
+  median_plus:  { fill: "#3b82f6", label: "Median+1 LSAT" },
+  gpa_comp:     { fill: "#8b5cf6", label: "25th–Med GPA" },
+  both_upgrade: { fill: "#22c55e", label: "Both Upgrades" },
+};
+
 // ── Init ────────────────────────────────────────────────────────────
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -178,7 +186,7 @@ function renderResults(data) {
 
   let hasMedianFlag = false;
   let hasGpaFloorFlag = false;
-  let hasCompFlag = false;
+  let usedColorKeys = new Set();
 
   results.forEach(r => {
     if (r.error) {
@@ -196,109 +204,125 @@ function renderResults(data) {
 
     if (r.at_lsat_median) hasMedianFlag = true;
     if (r.below_gpa_floor) hasGpaFloorFlag = true;
-    const hasComp = !!r.comparison;
-    if (hasComp) hasCompFlag = true;
+
+    const scenarios = r.scenarios || [];
+    scenarios.forEach(s => usedColorKeys.add(s.color_key));
 
     const card = document.createElement("div");
     card.className = "school-card";
 
-    const be = r.best_estimate;
-    const rate = be.rate;
-    const verdictCls = verdictClass(r.verdict);
+    // Build scenario bars HTML
+    let scenarioBarsHtml = "";
+    scenarios.forEach((s, i) => {
+      const color = SCENARIO_COLORS[s.color_key] || { fill: "#999", label: s.label };
+      const rate = s.best_estimate.rate;
+      const rateStr = rate != null ? rate.toFixed(1) + "%" : "N/A";
+      const verdictCls = verdictClassFromRate(rate);
+      const barWidth = rate != null ? Math.max(rate, 2) : 0; // min 2% width for visibility
+      scenarioBarsHtml += `
+        <div class="scenario-row" data-index="${i}">
+          <div class="scenario-label-col">
+            <span class="scenario-color-dot" style="background:${color.fill}"></span>
+            <span class="scenario-name">${esc(s.label)}</span>
+          </div>
+          <div class="scenario-bar-col">
+            <div class="scenario-bar-bg">
+              <div class="scenario-bar-fill" style="width:${barWidth}%;background:${color.fill}"></div>
+            </div>
+          </div>
+          <div class="scenario-rate-col ${verdictCls}">${rateStr}</div>
+          <div class="scenario-n-col">n=${s.best_estimate.n}</div>
+        </div>`;
+    });
+
+    // Build the details for each scenario (collapsible)
+    let scenarioDetailsHtml = "";
+    scenarios.forEach((s, i) => {
+      const color = SCENARIO_COLORS[s.color_key] || { fill: "#999", label: s.label };
+      scenarioDetailsHtml += `
+        <div class="scenario-detail" data-index="${i}">
+          <div class="scenario-detail-header" style="border-left: 3px solid ${color.fill}">
+            <strong>${esc(s.label)}</strong>
+            <span class="scenario-desc">${esc(s.description)}</span>
+          </div>
+          <table class="card-table scenario-table">
+            <tr>
+              <th>Level</th><th>N</th><th>Adm</th><th>Rate</th>
+            </tr>
+            <tr class="${s.best_estimate.level === 'total' ? 'best-row' : ''}">
+              <td>Total</td><td>${s.total.total}</td><td>${s.total.accepted}</td><td>${fmtRate(s.total.rate)}</td>
+            </tr>
+            <tr class="${s.best_estimate.level === 'kjd' ? 'best-row' : ''}">
+              <td>${esc(r.kjd_label)}</td><td>${s.kjd.total}</td><td>${s.kjd.accepted}</td><td>${fmtRate(s.kjd.rate)}</td>
+            </tr>
+            <tr class="${s.best_estimate.level === 'urm' ? 'best-row' : ''}">
+              <td>${esc(r.urm_label)}</td><td>${s.urm.total}</td><td>${s.urm.accepted}</td><td>${fmtRate(s.urm.rate)}</td>
+            </tr>
+            <tr class="${s.best_estimate.level === 'on_time' ? 'best-row' : ''}">
+              <td>On-time</td><td>${s.on_time.total}</td><td>${s.on_time.accepted}</td><td>${fmtRate(s.on_time.rate)}</td>
+            </tr>
+          </table>
+        </div>`;
+    });
+
+    // Find the primary (base) scenario for the pie chart
+    const baseSc = scenarios.find(s => s.color_key === "base") || scenarios[0];
+    const baseRate = baseSc ? baseSc.best_estimate.rate : null;
+    const baseVerdict = baseSc ? baseSc.verdict : "Low Data";
 
     const mflag = r.at_lsat_median ? '<span class="at-median-flag"> *</span>' : "";
     const gflag = r.below_gpa_floor ? '<span class="below-floor-flag"> **</span>' : "";
-
-    // Build comparison chart column if below 25th GPA
-    let compChartHtml = "";
-    if (hasComp) {
-      const c = r.comparison;
-      const compBe = pickBestEstimate(c.total, c.kjd, c.urm, c.on_time, r.kjd_label, r.urm_label);
-      compChartHtml = `
-        <div class="card-chart-col comp-chart-col">
-          <div class="comp-label">If 25th&ndash;med GPA</div>
-          <canvas class="pie-canvas pie-comp" width="110" height="110"></canvas>
-          <div class="card-verdict ${verdictClassFromRate(compBe.rate)}">${fmtRate(compBe.rate)}</div>
-          <div class="card-basis">${esc(compBe.label)} (n=${compBe.n})</div>
-        </div>`;
-    }
-
-    // Build comparison table rows
-    let compColHeaders = "";
-    let compRowTotal = "", compRowKjd = "", compRowUrm = "", compRowOt = "";
-    if (hasComp) {
-      const c = r.comparison;
-      compColHeaders = `<th class="comp-th">N</th><th class="comp-th">Adm</th><th class="comp-th">Rate</th>`;
-      compRowTotal = `<td class="comp-td">${c.total.total}</td><td class="comp-td">${c.total.accepted}</td><td class="comp-td">${fmtRate(c.total.rate)}</td>`;
-      compRowKjd   = `<td class="comp-td">${c.kjd.total}</td><td class="comp-td">${c.kjd.accepted}</td><td class="comp-td">${fmtRate(c.kjd.rate)}</td>`;
-      compRowUrm   = `<td class="comp-td">${c.urm.total}</td><td class="comp-td">${c.urm.accepted}</td><td class="comp-td">${fmtRate(c.urm.rate)}</td>`;
-      compRowOt    = `<td class="comp-td">${c.on_time.total}</td><td class="comp-td">${c.on_time.accepted}</td><td class="comp-td">${fmtRate(c.on_time.rate)}</td>`;
-    }
 
     card.innerHTML = `
       <div class="card-header">
         <span class="card-rank">${r.rank ? "#" + r.rank : "NR"}</span>
         <span class="card-school-name">${esc(r.school)}</span>
+        ${r.warning ? '<span class="card-warning">' + esc(r.warning) + '</span>' : ''}
       </div>
       <div class="card-body">
         <div class="card-chart-col">
-          ${hasComp ? '<div class="comp-label">Your range</div>' : ''}
-          <canvas class="pie-canvas pie-primary" width="${hasComp ? 110 : 140}" height="${hasComp ? 110 : 140}"></canvas>
-          <div class="card-verdict ${verdictCls}">${r.verdict}</div>
-          <div class="card-basis">${esc(be.label)} (n=${be.n})</div>
+          <canvas class="pie-canvas pie-primary" width="130" height="130"></canvas>
+          <div class="card-verdict ${verdictClass(baseVerdict)}">${baseVerdict}</div>
+          <div class="card-basis">${baseSc ? esc(baseSc.best_estimate.label) : ''} (n=${baseSc ? baseSc.best_estimate.n : 0})</div>
         </div>
-        ${compChartHtml}
-        <div class="card-stats-col">
+        <div class="card-scenarios-col">
           <div class="card-ranges">
-            <span class="range-label">LSAT:</span> ${fmtRange(r.lsat_range, true)}${mflag}
-            <span class="range-med">(med ${fmtPct(r.lsat_50, true)})</span><br>
-            <span class="range-label">GPA:</span> ${fmtRange(r.gpa_range, false)}${gflag}
-            <span class="range-med">(med ${fmtPct(r.gpa_50, false)})</span>
-            ${hasComp ? '<br><span class="range-label comp-color">Comp GPA:</span> ' + fmtRange(r.comparison.gpa_range, false) + ' <span class="range-med">(25th&ndash;med)</span>' : ''}
+            <span class="range-label">LSAT 25th/50th:</span> ${fmtPct(r.lsat_25, true)} / ${fmtPct(r.lsat_50, true)}${mflag}<br>
+            <span class="range-label">GPA 25th/50th:</span> ${fmtPct(r.gpa_25, false)} / ${fmtPct(r.gpa_50, false)}${gflag}
           </div>
-          <table class="card-table">
-            <tr>
-              <th>Level</th><th>N</th><th>Adm</th><th>Rate</th>${compColHeaders}
-            </tr>
-            <tr class="${be.level === 'total' ? 'best-row' : ''}">
-              <td>Total</td><td>${r.total.total}</td><td>${r.total.accepted}</td><td>${fmtRate(r.total.rate)}</td>${compRowTotal}
-            </tr>
-            <tr class="${be.level === 'kjd' ? 'best-row' : ''}">
-              <td>${esc(r.kjd_label)}</td><td>${r.kjd.total}</td><td>${r.kjd.accepted}</td><td>${fmtRate(r.kjd.rate)}</td>${compRowKjd}
-            </tr>
-            <tr class="${be.level === 'urm' ? 'best-row' : ''}">
-              <td>${esc(r.urm_label)}</td><td>${r.urm.total}</td><td>${r.urm.accepted}</td><td>${fmtRate(r.urm.rate)}</td>${compRowUrm}
-            </tr>
-            <tr class="${be.level === 'on_time' ? 'best-row' : ''}">
-              <td>On-time</td><td>${r.on_time.total}</td><td>${r.on_time.accepted}</td><td>${fmtRate(r.on_time.rate)}</td>${compRowOt}
-            </tr>
-          </table>
+          <div class="scenario-bars">
+            ${scenarioBarsHtml}
+          </div>
+          <button class="scenario-toggle-btn" onclick="this.closest('.school-card').querySelector('.scenario-details').classList.toggle('hidden'); this.textContent = this.textContent === 'Show Details' ? 'Hide Details' : 'Show Details';">Show Details</button>
+          <div class="scenario-details hidden">
+            ${scenarioDetailsHtml}
+          </div>
         </div>
       </div>`;
 
     grid.appendChild(card);
 
-    // Draw primary pie chart
+    // Draw the main pie chart with scenario segments
     const primaryCanvas = card.querySelector(".pie-primary");
-    drawPie(primaryCanvas, rate, r.verdict);
-
-    // Draw comparison pie chart if present
-    if (hasComp) {
-      const compCanvas = card.querySelector(".pie-comp");
-      const c = r.comparison;
-      const compBe = pickBestEstimate(c.total, c.kjd, c.urm, c.on_time, r.kjd_label, r.urm_label);
-      const compVerdict = verdictFromRate(compBe.rate, compBe.n);
-      drawPie(compCanvas, compBe.rate, compVerdict, "#8b5cf6");
+    if (scenarios.length > 1) {
+      drawMultiPie(primaryCanvas, scenarios);
+    } else {
+      drawPie(primaryCanvas, baseRate, baseVerdict);
     }
   });
 
   // Legend
   const legend = document.getElementById("legend");
-  let legendText = "";
+  let legendText = "<strong>Scenario Colors:</strong><br>";
+  for (const [key, info] of Object.entries(SCENARIO_COLORS)) {
+    if (usedColorKeys.has(key)) {
+      legendText += `<span class="legend-dot" style="background:${info.fill}"></span> ${info.label}&nbsp;&nbsp;`;
+    }
+  }
+  legendText += "<br><br>";
   if (hasMedianFlag) legendText += "* = applicant is at LSAT median (treated as below-median for range)<br>";
   if (hasGpaFloorFlag) legendText += "** = applicant GPA is below the 2nd-lowest accepted GPA (range capped at floor)<br>";
-  if (hasCompFlag) legendText += '<span class="comp-color">Purple chart</span> = comparison using 25th&ndash;median GPA range (what if your GPA were in the normal below-median band)<br>';
-  legendText += "Pie chart shows best estimate: the most specific cascade level with N &ge; 5.<br>";
+  legendText += "Bars show best estimate: the most specific cascade level with N &ge; 5.<br>";
   legendText += `Cascade: Total (decided) &rarr; ${kjdLabel} &rarr; ${urmLabel} &rarr; On-time (&le; Jan 1)<br>`;
   legendText += "Percentiles: ABA First Year Class 2025. Outcomes: LSD self-reports.";
   legend.innerHTML = legendText;
@@ -306,41 +330,85 @@ function renderResults(data) {
   section.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-// ── Best-estimate picker (reused for comparison) ────────────────────
+// ── Multi-scenario pie chart (concentric rings) ─────────────────────
 
-function pickBestEstimate(total, kjd, urm, on_time, kjdLabel, urmLabel) {
-  const MIN_N = 5;
-  const levels = [
-    { key: "on_time", label: "On-time", stats: on_time },
-    { key: "urm",     label: urmLabel,   stats: urm },
-    { key: "kjd",     label: kjdLabel,   stats: kjd },
-    { key: "total",   label: "Total",    stats: total },
-  ];
-  for (const lv of levels) {
-    if (lv.stats && lv.stats.total >= MIN_N && lv.stats.rate != null) {
-      return { level: lv.key, label: lv.label, rate: lv.stats.rate, n: lv.stats.total };
+function drawMultiPie(canvas, scenarios) {
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width;
+  const h = canvas.height;
+  const cx = w / 2;
+  const cy = h / 2;
+  const maxRadius = Math.min(cx, cy) - 4;
+
+  ctx.clearRect(0, 0, w, h);
+
+  // Draw concentric rings: outermost = first scenario (lowest rate),
+  // innermost = last scenario (highest rate)
+  const ringWidth = maxRadius / (scenarios.length + 1); // +1 for center hole
+
+  scenarios.forEach((s, i) => {
+    const outerR = maxRadius - i * ringWidth;
+    const innerR = outerR - ringWidth + 2; // 2px gap between rings
+    const rate = s.best_estimate.rate;
+    const color = SCENARIO_COLORS[s.color_key] || { fill: "#999" };
+
+    if (rate == null) {
+      // Grey ring
+      ctx.beginPath();
+      ctx.arc(cx, cy, outerR, 0, Math.PI * 2);
+      ctx.arc(cx, cy, Math.max(innerR, 0), 0, Math.PI * 2, true);
+      ctx.fillStyle = "#e5e7eb";
+      ctx.fill();
+      return;
     }
+
+    const pct = rate / 100;
+    const acceptAngle = pct * Math.PI * 2;
+    const startAngle = -Math.PI / 2;
+
+    // Reject arc (grey)
+    if (pct < 1) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, outerR, startAngle + acceptAngle, startAngle + Math.PI * 2);
+      ctx.arc(cx, cy, Math.max(innerR, 0), startAngle + Math.PI * 2, startAngle + acceptAngle, true);
+      ctx.closePath();
+      ctx.fillStyle = "#e5e7eb";
+      ctx.fill();
+    }
+
+    // Accept arc (colored)
+    if (pct > 0) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, outerR, startAngle, startAngle + acceptAngle);
+      ctx.arc(cx, cy, Math.max(innerR, 0), startAngle + acceptAngle, startAngle, true);
+      ctx.closePath();
+      ctx.fillStyle = color.fill;
+      ctx.fill();
+    }
+  });
+
+  // White center
+  const centerR = maxRadius - scenarios.length * ringWidth;
+  if (centerR > 0) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, centerR, 0, Math.PI * 2);
+    ctx.fillStyle = "#fff";
+    ctx.fill();
   }
-  return { level: "total", label: "Total", rate: total ? total.rate : null, n: total ? total.total : 0 };
+
+  // Show base rate in center
+  const baseSc = scenarios.find(s => s.color_key === "base") || scenarios[0];
+  const baseRate = baseSc ? baseSc.best_estimate.rate : null;
+  if (baseRate != null) {
+    ctx.font = "bold 18px -apple-system, sans-serif";
+    ctx.fillStyle = "#2c3e50";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(baseRate.toFixed(0) + "%", cx, cy);
+  }
 }
 
-function verdictFromRate(rate, n) {
-  if (n < 5 || rate == null) return "Low Data";
-  if (rate >= 60) return "Likely";
-  if (rate >= 40) return "Good Chance";
-  if (rate >= 20) return "Possible";
-  return "Unlikely";
-}
-
-function verdictClassFromRate(rate) {
-  if (rate == null) return "verdict-low-data";
-  if (rate >= 60) return "verdict-likely";
-  if (rate >= 40) return "verdict-good-chance";
-  if (rate >= 20) return "verdict-possible";
-  return "verdict-unlikely";
-}
-
-// ── Pie chart drawing ───────────────────────────────────────────────
+// ── Single pie chart drawing ────────────────────────────────────────
 
 function drawPie(canvas, rate, verdict, colorOverride) {
   const ctx = canvas.getContext("2d");
@@ -353,7 +421,6 @@ function drawPie(canvas, rate, verdict, colorOverride) {
   ctx.clearRect(0, 0, w, h);
 
   if (rate == null) {
-    // No data — grey circle with "?"
     ctx.beginPath();
     ctx.arc(cx, cy, radius, 0, Math.PI * 2);
     ctx.fillStyle = "#e5e7eb";
@@ -368,13 +435,11 @@ function drawPie(canvas, rate, verdict, colorOverride) {
 
   const pct = rate / 100;
   const acceptAngle = pct * Math.PI * 2;
-  const startAngle = -Math.PI / 2;  // 12 o'clock
+  const startAngle = -Math.PI / 2;
 
-  // Accepted slice color
   const acceptColor = colorOverride || getAcceptColor(verdict);
   const rejectColor = "#e5e7eb";
 
-  // Reject slice
   if (pct < 1) {
     ctx.beginPath();
     ctx.moveTo(cx, cy);
@@ -384,7 +449,6 @@ function drawPie(canvas, rate, verdict, colorOverride) {
     ctx.fill();
   }
 
-  // Accept slice
   if (pct > 0) {
     ctx.beginPath();
     ctx.moveTo(cx, cy);
@@ -394,14 +458,12 @@ function drawPie(canvas, rate, verdict, colorOverride) {
     ctx.fill();
   }
 
-  // Center white circle (donut hole)
   const innerRadius = radius * 0.6;
   ctx.beginPath();
   ctx.arc(cx, cy, innerRadius, 0, Math.PI * 2);
   ctx.fillStyle = "#fff";
   ctx.fill();
 
-  // Percentage text in center
   ctx.font = "bold 20px -apple-system, sans-serif";
   ctx.fillStyle = "#2c3e50";
   ctx.textAlign = "center";
@@ -445,6 +507,14 @@ function verdictClass(v) {
     case "Unlikely":    return "verdict-unlikely";
     default:            return "verdict-low-data";
   }
+}
+
+function verdictClassFromRate(rate) {
+  if (rate == null) return "verdict-low-data";
+  if (rate >= 60) return "verdict-likely";
+  if (rate >= 40) return "verdict-good-chance";
+  if (rate >= 20) return "verdict-possible";
+  return "verdict-unlikely";
 }
 
 function esc(s) {

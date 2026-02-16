@@ -112,6 +112,13 @@ def api_analyze():
     def _group_dict(g):
         return {"total": g.total, "accepted": g.accepted, "rate": g.rate}
 
+    def _range_str(r, is_lsat):
+        if r is None:
+            return "N/A"
+        if is_lsat:
+            return f"{r.lower:.0f}–{r.upper:.0f}"
+        return f"{r.lower:.2f}–{r.upper:.2f}"
+
     results = []
     for name in school_names:
         # Resolve the name
@@ -141,46 +148,108 @@ def api_analyze():
         )
 
         rank = SCHOOL_RANK.get(excel_name)
-
-        # ── Best estimate: most specific cascade level with N >= 5 ──
-        MIN_N = 5
         kjd_label = analysis.kjd_label
         urm_label = analysis.urm_label
-        # Walk from most specific (on_time) back to least (total)
-        cascade_levels = [
-            ("on_time", "On-time", analysis.on_time),
-            ("urm",     urm_label, analysis.urm),
-            ("kjd",     kjd_label, analysis.kjd),
-            ("total",   "Total",   analysis.total),
-        ]
-        best_key = "total"
-        best_label = "Total"
-        best_rate = analysis.total.rate
-        best_n = analysis.total.total
-        for key, label, stats in cascade_levels:
-            if stats.total >= MIN_N and stats.rate is not None:
-                best_key = key
-                best_label = label
-                best_rate = stats.rate
-                best_n = stats.total
-                break   # most specific that qualifies
 
-        if best_n < MIN_N or best_rate is None:
-            verdict = "Low Data"
-        elif best_rate >= 60:
-            verdict = "Likely"
-        elif best_rate >= 40:
-            verdict = "Good Chance"
-        elif best_rate >= 20:
-            verdict = "Possible"
-        else:
-            verdict = "Unlikely"
+        # ── Build scenarios ──────────────────────────────────────
+        # Each scenario: {label, lsat_range, gpa_range, total, kjd,
+        #   urm, on_time, best_estimate, verdict, color_key}
+
+        scenarios = []
+
+        def _best_estimate(a):
+            """Pick best cascade level with N >= 5."""
+            MIN_N = 5
+            levels = [
+                ("on_time", "On-time", a.on_time),
+                ("urm",     urm_label, a.urm),
+                ("kjd",     kjd_label, a.kjd),
+                ("total",   "Total",   a.total),
+            ]
+            bk, bl, br, bn = "total", "Total", a.total.rate, a.total.total
+            for key, label, stats in levels:
+                if stats.total >= MIN_N and stats.rate is not None:
+                    bk, bl, br, bn = key, label, stats.rate, stats.total
+                    break
+            return {"level": bk, "label": bl, "rate": br, "n": bn}
+
+        def _verdict(be):
+            if be["n"] < 5 or be["rate"] is None:
+                return "Low Data"
+            if be["rate"] >= 60: return "Likely"
+            if be["rate"] >= 40: return "Good Chance"
+            if be["rate"] >= 20: return "Possible"
+            return "Unlikely"
+
+        def _scenario_dict(label, a, color_key, desc):
+            be = _best_estimate(a)
+            return {
+                "label": label,
+                "description": desc,
+                "color_key": color_key,
+                "lsat_range": _range_dict(a.lsat_range),
+                "gpa_range": _range_dict(a.gpa_range),
+                "total": _group_dict(a.total),
+                "kjd": _group_dict(a.kjd),
+                "urm": _group_dict(a.urm),
+                "on_time": _group_dict(a.on_time),
+                "best_estimate": be,
+                "verdict": _verdict(be),
+            }
+
+        # Scenario 1: Base model (always present)
+        base_label = "Base"
+        if analysis.at_lsat_median:
+            base_label = "At Median LSAT"
+        scenarios.append(_scenario_dict(
+            base_label, analysis, "base",
+            f"LSAT {_range_str(analysis.lsat_range, True)}, GPA {_range_str(analysis.gpa_range, False)}"
+        ))
+
+        # Scenario 2: Median+1 LSAT (only if at or below median)
+        if analysis.at_lsat_median and pct.lsat_50 is not None:
+            med1_analysis = analyze_school(
+                school_name=excel_name, pct=pct, lsd=lsd,
+                applicant_gpa=gpa, applicant_lsat=pct.lsat_50 + 1,
+                is_urm=is_urm, is_kjd=is_kjd,
+            )
+            scenarios.append(_scenario_dict(
+                "Median+1 LSAT", med1_analysis, "median_plus",
+                f"LSAT {_range_str(med1_analysis.lsat_range, True)}, GPA {_range_str(med1_analysis.gpa_range, False)}"
+            ))
+
+        # Scenario 3: 25th–Med GPA (only if below 25th)
+        if analysis.below_gpa_25 and analysis.comp_gpa_range is not None:
+            # Re-run analysis with GPA = 25th (to get the 25th-med range)
+            gpa_comp_analysis = analyze_school(
+                school_name=excel_name, pct=pct, lsd=lsd,
+                applicant_gpa=pct.gpa_25, applicant_lsat=lsat,
+                is_urm=is_urm, is_kjd=is_kjd,
+            )
+            scenarios.append(_scenario_dict(
+                "25th–Med GPA", gpa_comp_analysis, "gpa_comp",
+                f"LSAT {_range_str(gpa_comp_analysis.lsat_range, True)}, GPA {_range_str(gpa_comp_analysis.gpa_range, False)}"
+            ))
+
+        # Scenario 4: Median+1 LSAT + 25th–Med GPA (both upgrades)
+        if (analysis.at_lsat_median and analysis.below_gpa_25
+                and pct.lsat_50 is not None and pct.gpa_25 is not None):
+            both_analysis = analyze_school(
+                school_name=excel_name, pct=pct, lsd=lsd,
+                applicant_gpa=pct.gpa_25, applicant_lsat=pct.lsat_50 + 1,
+                is_urm=is_urm, is_kjd=is_kjd,
+            )
+            scenarios.append(_scenario_dict(
+                "Med+1 LSAT + 25th GPA", both_analysis, "both_upgrade",
+                f"LSAT {_range_str(both_analysis.lsat_range, True)}, GPA {_range_str(both_analysis.gpa_range, False)}"
+            ))
+
+        # Sort scenarios by best_estimate rate (low to high)
+        scenarios.sort(key=lambda s: s["best_estimate"]["rate"] if s["best_estimate"]["rate"] is not None else -1)
 
         results.append({
             "school": excel_name,
             "rank": rank,
-            "lsat_range": _range_dict(analysis.lsat_range),
-            "gpa_range": _range_dict(analysis.gpa_range),
             "lsat_25": analysis.lsat_25,
             "lsat_50": analysis.lsat_50,
             "gpa_25": analysis.gpa_25,
@@ -188,26 +257,9 @@ def api_analyze():
             "at_lsat_median": analysis.at_lsat_median,
             "below_gpa_floor": analysis.below_gpa_floor,
             "below_gpa_25": analysis.below_gpa_25,
-            "total": _group_dict(analysis.total),
-            "kjd": _group_dict(analysis.kjd),
-            "urm": _group_dict(analysis.urm),
-            "on_time": _group_dict(analysis.on_time),
             "kjd_label": kjd_label,
             "urm_label": urm_label,
-            "best_estimate": {
-                "level": best_key,
-                "label": best_label,
-                "rate": best_rate,
-                "n": best_n,
-            },
-            "comparison": {
-                "gpa_range": _range_dict(analysis.comp_gpa_range),
-                "total": _group_dict(analysis.comp_total) if analysis.comp_total else None,
-                "kjd": _group_dict(analysis.comp_kjd) if analysis.comp_kjd else None,
-                "urm": _group_dict(analysis.comp_urm) if analysis.comp_urm else None,
-                "on_time": _group_dict(analysis.comp_on_time) if analysis.comp_on_time else None,
-            } if analysis.below_gpa_25 else None,
-            "verdict": verdict,
+            "scenarios": scenarios,
             "warning": analysis.warning,
         })
 
