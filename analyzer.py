@@ -240,7 +240,7 @@ def analyze_school(
     """
     lsat_range, at_median = _build_lsat_range(applicant_lsat, pct, lsd)
     gpa_range, below_gpa_floor = _build_gpa_range(applicant_gpa, pct, lsd)
-    kjd_label = "KJD" if is_kjd else "Non-KJD"
+    kjd_label = "KJD" if is_kjd else "All (KJD skip)"
     urm_label = "URM" if is_urm else "Non-URM"
 
     empty = GroupStats(0, 0)
@@ -276,10 +276,14 @@ def analyze_school(
     decided = in_box[in_box["result_group"] != "no_decision"]
     total = _count(decided)
 
+    # KJD filter: only filter when applicant IS KJD (those are reliably
+    # identified via work_experience==0).  When non-KJD, skip the filter
+    # because ~40% of LSD rows have NaN work_experience, which would
+    # wrongly inflate the "non-KJD" bucket.
     if is_kjd:
         kjd_df = decided[decided["is_kjd"]]
     else:
-        kjd_df = decided[~decided["is_kjd"]]
+        kjd_df = decided  # pass through — can't reliably exclude KJDs
     kjd_stats = _count(kjd_df)
 
     if is_urm:
@@ -292,7 +296,7 @@ def analyze_school(
     on_time_stats = _count(on_time_df)
 
     warning = None
-    if total.total < 5:
+    if total.total < 10:
         warning = f"Low sample size (n={total.total})"
 
     # ── Comparison cascade: [25th, median-0.01] GPA range ──
@@ -316,7 +320,7 @@ def analyze_school(
         if is_kjd:
             comp_kjd_df = comp_decided[comp_decided["is_kjd"]]
         else:
-            comp_kjd_df = comp_decided[~comp_decided["is_kjd"]]
+            comp_kjd_df = comp_decided  # pass through (see note above)
         comp_kjd = _count(comp_kjd_df)
 
         if is_urm:

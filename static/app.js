@@ -6,6 +6,7 @@ let selectedSchools = new Set();
 // ── Scenario colors ─────────────────────────────────────────────────
 const SCENARIO_COLORS = {
   base:         { fill: "#64748b", label: "Base Model" },
+  at_median:    { fill: "#f59e0b", label: "At Median LSAT" },
   median_plus:  { fill: "#3b82f6", label: "Median+1 LSAT" },
   gpa_comp:     { fill: "#8b5cf6", label: "25th–Med GPA" },
   both_upgrade: { fill: "#22c55e", label: "Both Upgrades" },

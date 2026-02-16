@@ -158,8 +158,8 @@ def api_analyze():
         scenarios = []
 
         def _best_estimate(a):
-            """Pick best cascade level with N >= 5."""
-            MIN_N = 5
+            """Pick best cascade level with N >= 10."""
+            MIN_N = 10
             levels = [
                 ("on_time", "On-time", a.on_time),
                 ("urm",     urm_label, a.urm),
@@ -174,7 +174,7 @@ def api_analyze():
             return {"level": bk, "label": bl, "rate": br, "n": bn}
 
         def _verdict(be):
-            if be["n"] < 5 or be["rate"] is None:
+            if be["n"] < 10 or be["rate"] is None:
                 return "Low Data"
             if be["rate"] >= 60: return "Likely"
             if be["rate"] >= 40: return "Good Chance"
@@ -197,17 +197,38 @@ def api_analyze():
                 "verdict": _verdict(be),
             }
 
+        # Determine which extra scenarios apply
+        lsat_below_median = (
+            pct.lsat_50 is not None and lsat <= pct.lsat_50
+        )
+        gpa_below_25 = analysis.below_gpa_25  # below 25th but above floor
+
         # Scenario 1: Base model (always present)
         base_label = "Base"
         if analysis.at_lsat_median:
             base_label = "At Median LSAT"
+        elif lsat_below_median:
+            base_label = "Below Median LSAT"
         scenarios.append(_scenario_dict(
             base_label, analysis, "base",
             f"LSAT {_range_str(analysis.lsat_range, True)}, GPA {_range_str(analysis.gpa_range, False)}"
         ))
 
-        # Scenario 2: Median+1 LSAT (only if at or below median)
-        if analysis.at_lsat_median and pct.lsat_50 is not None:
+        # Scenario 2: At-Median LSAT (only if strictly below median,
+        # to show what "at median" would look like)
+        if lsat_below_median and not analysis.at_lsat_median and pct.lsat_50 is not None:
+            at_med_analysis = analyze_school(
+                school_name=excel_name, pct=pct, lsd=lsd,
+                applicant_gpa=gpa, applicant_lsat=pct.lsat_50,
+                is_urm=is_urm, is_kjd=is_kjd,
+            )
+            scenarios.append(_scenario_dict(
+                "At Median LSAT", at_med_analysis, "at_median",
+                f"LSAT {_range_str(at_med_analysis.lsat_range, True)}, GPA {_range_str(at_med_analysis.gpa_range, False)}"
+            ))
+
+        # Scenario 3: Median+1 LSAT (if at or below median)
+        if lsat_below_median and pct.lsat_50 is not None:
             med1_analysis = analyze_school(
                 school_name=excel_name, pct=pct, lsd=lsd,
                 applicant_gpa=gpa, applicant_lsat=pct.lsat_50 + 1,
@@ -218,9 +239,8 @@ def api_analyze():
                 f"LSAT {_range_str(med1_analysis.lsat_range, True)}, GPA {_range_str(med1_analysis.gpa_range, False)}"
             ))
 
-        # Scenario 3: 25th–Med GPA (only if below 25th)
-        if analysis.below_gpa_25 and analysis.comp_gpa_range is not None:
-            # Re-run analysis with GPA = 25th (to get the 25th-med range)
+        # Scenario 4: 25th–Med GPA (only if below 25th GPA)
+        if gpa_below_25 and pct.gpa_25 is not None:
             gpa_comp_analysis = analyze_school(
                 school_name=excel_name, pct=pct, lsd=lsd,
                 applicant_gpa=pct.gpa_25, applicant_lsat=lsat,
@@ -231,8 +251,8 @@ def api_analyze():
                 f"LSAT {_range_str(gpa_comp_analysis.lsat_range, True)}, GPA {_range_str(gpa_comp_analysis.gpa_range, False)}"
             ))
 
-        # Scenario 4: Median+1 LSAT + 25th–Med GPA (both upgrades)
-        if (analysis.at_lsat_median and analysis.below_gpa_25
+        # Scenario 5: Median+1 LSAT + 25th–Med GPA (both upgrades)
+        if (lsat_below_median and gpa_below_25
                 and pct.lsat_50 is not None and pct.gpa_25 is not None):
             both_analysis = analyze_school(
                 school_name=excel_name, pct=pct, lsd=lsd,
@@ -240,7 +260,7 @@ def api_analyze():
                 is_urm=is_urm, is_kjd=is_kjd,
             )
             scenarios.append(_scenario_dict(
-                "Med+1 LSAT + 25th GPA", both_analysis, "both_upgrade",
+                "Med+1 + 25th GPA", both_analysis, "both_upgrade",
                 f"LSAT {_range_str(both_analysis.lsat_range, True)}, GPA {_range_str(both_analysis.gpa_range, False)}"
             ))
 
